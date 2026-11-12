@@ -1,0 +1,80 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+require __DIR__ . '/bootstrap.php';
+
+use FormGuard\Guard;
+use FormGuard\Options;
+use FormGuard\Storage\FileStore;
+use FormGuard\Storage\State;
+use FormGuard\Storage\StorageException;
+
+$command = $argv[1] ?? 'help';
+if (in_array($command, ['init', 'config:check', 'config:show'], true)) {
+    exit(FormGuard\Console\ConfigurationCommands::run($command, array_slice($argv, 2)));
+}
+if (in_array($command, ['help', '--help', '-h'], true)) {
+    echo "Form Guard\nConfiguration: init [--profile=standard|tolerant|reinforced] [--locale=en|fr] [--scope=contact] [--output=file.php] [--interactive]\nValidation/diagnostic: config:check|config:show --config=TRUSTED_FILE.php [--locale=en|fr]\nMaintenance: status, prune, migrate, reset\nRequired for maintenance: --runtime-dir=ABSOLUTE_PRIVATE_PATH\nOptional: --scope=APPLICATION_SCOPE\nReset additionally requires --confirm-reset and clears all limits.\nStop application workers before migrate/reset; retain the original 0.1 key for migration.\n";
+    exit(0);
+}
+try {
+    if (!in_array($command, ['status', 'prune', 'migrate', 'reset'], true)) {
+        throw new InvalidArgumentException('Unknown maintenance command.');
+    }
+    $args = [];
+    for ($i = 2; $i < $argc; $i++) {
+        if ($argv[$i] === '--confirm-reset') {
+            $args['confirm-reset'] = true;
+            continue;
+        }
+        if (!preg_match('/^--(runtime-dir|scope|config)(?:=(.*))?$/sD', $argv[$i], $match)) {
+            throw new InvalidArgumentException('Unknown maintenance argument.');
+        }
+        $value = $match[2] ?? ($argv[++$i] ?? '');
+        if ($value === '' || str_starts_with($value, '--') || isset($args[$match[1]])) {
+            throw new InvalidArgumentException('Invalid or duplicate maintenance argument.');
+        }
+        $args[$match[1]] = $value;
+    }
+    $settings = isset($args['config']) ? FormGuard\Console\ConfigurationCommands::load($args['config'])->options() : Options::resolve([]);
+    if (!isset($args['runtime-dir']) && $settings['runtime_dir'] === '') {
+        throw new InvalidArgumentException('An explicit --runtime-dir is required.');
+    }
+    if ($command === 'reset' && !isset($args['confirm-reset'])) {
+        throw new InvalidArgumentException('Reset requires --confirm-reset; all current limits will be lost.');
+    }
+    if (isset($args['config'])) {
+        foreach (['runtime-dir' => 'runtime_dir', 'scope' => 'scope'] as $argument => $key) {
+            if (isset($args[$argument]) && $settings[$key] !== '' && $args[$argument] !== $settings[$key]) {
+                throw new InvalidArgumentException('Conflicting configuration and maintenance arguments.');
+            }
+        }
+    }
+    $settings = Options::resolve(array_replace($settings, ['runtime_dir' => $args['runtime-dir'] ?? $settings['runtime_dir'], 'scope' => $args['scope'] ?? $settings['scope']]));
+    $store = new FileStore($settings['runtime_dir'], $settings['scope'], $settings['max_state_bytes']);
+    $guard = new Guard($settings, $store);
+    $result = match ($command) {
+        'status' => $store->transaction(fn (State $state): array => ['buckets' => count($state->buckets), 'clock' => $state->clock, 'format' => 2]),
+        'prune' => ['removed_buckets' => $guard->prune(), 'removed_temporary_files' => $store->cleanupTemporaryFiles(max(0, time() - 3600))],
+        'migrate' => ['migrated_buckets' => $store->migrate()],
+        'reset' => (function () use ($store): array {
+            $store->reset();
+            return ['reset' => true];
+        })(),
+    };
+    echo json_encode(['command' => $command] + $result, JSON_THROW_ON_ERROR) . "\n";
+} catch (StorageException $error) {
+    fwrite(STDERR, 'Storage error: ' . $error->reason . ". Preserve existing files and follow the recovery guide.\n");
+    exit(1);
+} catch (InvalidArgumentException $error) {
+    fwrite(STDERR, $error->getMessage() . "\n");
+    exit(2);
+} catch (Throwable) {
+    fwrite(STDERR, "Maintenance failed. No application action should be performed.\n");
+    exit(1);
+}

@@ -1,0 +1,84 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name }}-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  php:
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        php: ['8.3', '8.4', '8.5']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: shivammathur/setup-php@d52fc211a0436f8839a587b3b5b8efddab4744ea
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          extensions: zip
+          tools: composer:v2
+      - run: composer validate --strict
+      - run: composer install --no-interaction --prefer-dist
+      - run: composer check
+      - run: composer test
+      - run: composer test:concurrency
+      - run: composer test:failure
+      - run: composer test:load
+      - run: composer test:distribution
+      - run: node --check assets/form-guard.js
+      - run: composer test:browser
+      - run: composer audit --locked
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: php-results-${{ matrix.os }}-${{ matrix.php }}
+          path: |
+            build/load-results.json
+            build/failure-results.json
+            build/security-results.json
+            build/distribution/form-guard.zip
+            build/distribution-manifest.json
+          retention-days: 7
+
+  browsers:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: shivammathur/setup-php@d52fc211a0436f8839a587b3b5b8efddab4744ea
+        with:
+          php-version: '8.3'
+          coverage: none
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install ${{ matrix.browser }}
+        timeout-minutes: 8
+      - run: npm run test:e2e -- --project=${{ matrix.browser }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: browser-results-${{ matrix.browser }}
+          path: |
+            build/playwright-results.json
+            build/playwright-results/
+          retention-days: 7

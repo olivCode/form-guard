@@ -1,0 +1,110 @@
+{
+    "name": "olivcode/form-guard",
+    "description": "Progressive abuse protection for PHP forms, with optional JavaScript signals.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "forms",
+        "antispam",
+        "honeypot",
+        "rate-limiting",
+        "csrf"
+    ],
+    "authors": [
+        {
+            "name": "Olivier Gaillot"
+        }
+    ],
+    "require": {
+        "php": "^8.3"
+    },
+    "autoload": {
+        "psr-4": {
+            "FormGuard\\": "src/"
+        }
+    },
+    "scripts": {
+        "test": [
+            "@php tests/run.php",
+            "@php tests/storage.php",
+            "@php tests/maintenance.php",
+            "@php tests/http.php",
+            "@php tests/configuration.php",
+            "@php tests/configuration-cli.php",
+            "@php tests/plugins.php",
+            "@php tests/documentation.php",
+            "@php tests/security.php"
+        ],
+        "test:concurrency": [
+            "@php tests/concurrency.php",
+            "@php tests/storage-concurrency.php"
+        ],
+        "check": [
+            "@php tools/check.php",
+            "@analyse",
+            "@cs:check",
+            "@php tools/check-docs.php"
+        ],
+        "test:distribution": [
+            "@php tools/prepare-consumer.php",
+            "@composer archive --format=zip --dir=build/distribution --file=form-guard",
+            "@php tests/archive.php",
+            "@php tests/manual-install.php",
+            "@composer --no-cache install --working-dir=build/consumer --no-interaction --prefer-dist --no-plugins --no-scripts",
+            "@php tests/consumer.php",
+            "@php tests/pilot.php",
+            "@php tests/lifecycle.php",
+            "@php tools/check-export.php"
+        ],
+        "test:browser": "node tests/browser.mjs",
+        "analyse": "@php vendor/bin/phpstan analyse --no-progress",
+        "cs:check": "@php vendor/bin/php-cs-fixer fix --dry-run --diff --sequential",
+        "cs:fix": "@php vendor/bin/php-cs-fixer fix --sequential",
+        "test:load": "@php tests/load.php",
+        "test:failure": "@php tests/failure.php"
+    },
+    "archive": {
+        "exclude": [
+            "/.git",
+            "/.github",
+            "/tests",
+            "/tools",
+            "/build",
+            "/vendor",
+            "/composer.phar",
+            "/composer.lock",
+            "/.env",
+            "/.env.*",
+            "*.log",
+            "/.editorconfig",
+            "/.gitattributes",
+            "/.gitignore",
+            "/node_modules",
+            "/package.json",
+            "/package-lock.json",
+            "/playwright.config.mjs",
+            "/phpstan.neon",
+            "/.php-cs-fixer.dist.php",
+            "/docs/development.*",
+            "/docs/testing.*",
+            "/docs/accessibility-testing.*",
+            "/CONTRIBUTING.*"
+        ]
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "bin": [
+        "bin/form-guard"
+    ],
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.90",
+        "phpstan/phpstan": "^2.1"
+    },
+    "homepage": "https://github.com/olivCode/form-guard",
+    "support": {
+        "issues": "https://github.com/olivCode/form-guard/issues",
+        "source": "https://github.com/olivCode/form-guard",
+        "security": "https://github.com/olivCode/form-guard/security/policy"
+    }
+}
